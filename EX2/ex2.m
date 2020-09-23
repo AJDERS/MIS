@@ -47,6 +47,7 @@ saveas(plt, 'scatter_map.png');
 
 %%
 % Do convolution.
+p = load('psf1.mat');
 conv = conv2(scatter_map, p.psf1);
 
 % Find envelope and scale to dynamic range of 60 dB.
@@ -54,8 +55,8 @@ envelope = abs(hilbert(double(conv)));
 envelope = envelope /(max(max(envelope)));
 envelope = 20 * log10(envelope + eps);
 envelope = 127/60 * (envelope + 60);
-%envelope(envelope<-60)=-60;
-imagesc(envelope);
+envelope(envelope<-60)=-60;
+imagesc(envelope(1:180, 50:200));
 colormap gray;
 axis;
 
@@ -69,6 +70,7 @@ envelope = abs(hilbert(double(conv)));
 envelope = envelope /(max(max(envelope)));
 envelope = 20 * log10(envelope + eps);
 envelope = 127/60 * (envelope + 60);
-imagesc(envelope);
+envelope(envelope<-60)=-60;
+imagesc(envelope(1:180, 50:200));
 colormap gray;
 axis;
