@@ -1,0 +1,137 @@
+function beamforming
+clear;
+close all;
+
+%% Geometry
+num_elm = 192;
+num_trans_elm = 64;
+conv_radius = 60.3 / 1000; %m
+elm_height = 13 / 1000; %m
+elm_width = 0.3 / 1000; %m
+elm_kerf = 0.03 / 1000; %m
+
+circle_convex = 2 * pi * conv_radius;
+elm_pitch = elm_kerf + elm_width; %m
+size_transducer = (num_elm - 1) * elm_pitch + elm_width; %m
+angle_span_transducer = (size_transducer / circle_convex) * 360; %degrees
+angle_span_elm = angle_span_transducer / 192;
+
+%% Element positions (Polar coordinates)
+offset = (elm_kerf + elm_width) / 2 ; %m
+radial_coord = ones(num_elm,1) * (conv_radius + elm_height);
+angular_coord = ...
+    reshape( ...
+        cat(2, ...
+            (-offset -angle_span_elm * 95):angle_span_elm:(-offset), ...
+            offset:angle_span_elm:(offset + angle_span_elm * 95)), ...
+        num_elm, 1); %degrees
+
+
+%% Simulation Parameters
+sim_para = load('sim_parameters.mat');
+sample_fs = sim_para.sim_para.fs;
+c = sim_para.sim_para.c;
+
+
+%% Load RF data
+rf_data_cell = cell(1,129); % store each image line.
+i = 1;
+directory = dir('duplex/B_mode/seq_0001/');
+for file_index = 1:length(directory) %%%%%%%%%% Change this later
+    if directory(file_index).isdir == 0
+        data = ...
+            load(['duplex/B_mode/seq_0001/', directory(file_index).name]);
+        rf_data_cell{i} = data.samples;
+        i = i + 1;
+    end
+end
+
+%% Time/depth axis, images.
+steps = size(rf_data_cell{1}, 1);
+time_step = 1 / sample_fs;
+depth_step = c * time_step;
+time_axis = 0:time_step:(steps * time_step);
+depth_axis = 0:depth_step:(steps * depth_step);
+figure(1)
+imagesc(1:192, time_axis, rf_data_cell{1})
+xlabel('Elements')
+ylabel('Time [s]')
+
+
+%% ROI (Polar coordinates)
+ref_radial = conv_radius + elm_height;
+min_depth = ref_radial + 20; %m
+max_depth = ref_radial + 180; %m
+roi_r = (min_depth:max_depth) / 1000; % 'r' for radius.
+max_angle = 60; %degree
+roi_t = -max_angle:max_angle; % 't' for theta.
+
+%% Beamforming
+beamformed_image = zeros(length(roi_r), length(roi_t));
+figure(2)
+imagesc(1:192, time_axis, rf_data_cell{1})
+hold on
+for i=1:length(rf_data_cell)
+    sprintf('Calculating the %0.5g frame.', i)
+    if i + (num_trans_elm-1) <= 192
+        % Get angular coordinates of transmit elements.
+        transmit_elm_ang_coord = ...
+            angular_coord(i:(i + (num_trans_elm - 1)));
+        
+        % Find angular coordinate for beam reference point.
+        ref_ang_coord = (transmit_elm_ang_coord(num_trans_elm / 2) ...
+            + transmit_elm_ang_coord((num_trans_elm / 2) + 1)) / 2;
+        
+        % Make meshgrid of ROI and elements.
+        % (mm, degrees, elements)
+        [R, Theta, Elm] = meshgrid(roi_r, roi_t, transmit_elm_ang_coord);
+        
+        % Convert to cartesian coords for delay calculation.
+        [g_x, g_z] = pol2cart(Theta, R); % Grid (x,z)
+        [e_x, e_z] = pol2cart(Elm, ref_radial); % Element (x,z)
+        [r_x, r_z] = pol2cart(ref_ang_coord, ref_radial); % Reference (x,z)
+        
+        % Calculate time of flight delay array.
+        time_of_flight_delay = ToF(r_x, r_z, g_x, g_z, e_x, e_z, c);
+        pxl_to_take = round((time_of_flight_delay) * (sample_fs));
+        
+        % Delay
+        for r = 1:length(roi_r)       % Radial Axis
+            for t = 1:length(roi_t)   % Angular Axis
+                coord_sum = ones(num_trans_elm,1);
+                % z_0 ?
+                for elm = 1:num_trans_elm
+                    delay = pxl_to_take(t, r, elm);
+                    if delay > 0 && delay < steps
+                        coord_sum(elm) = rf_data_cell{i}(delay,elm);
+                        %plot(elm, delay, 'ro');
+                    %else
+                        %sprintf('Shits fucked yo')
+                        %sprintf('%0.5g', delay);
+                    end
+                end
+                % Sum
+                beamformed_image(r,t) = beamformed_image(r,t) + sum(coord_sum);
+                %sprintf('Calculating %0.5g, %0.5g', r, t)
+            end
+        end
+    end
+end
+hold off
+figure(3)
+imagesc(beamformed_image);
+sprintf('Done')
+end
+
+%% Subfunctions
+function time_of_flight_delay = ToF(r_x, r_z, g_x, g_z, e_x, e_z, c)
+    ref_to_grid_dist = sqrt((r_x-g_x).^2 + (r_z-g_z).^2);
+    elm_to_grid_dist = sqrt((e_x-g_x).^2 + (e_z-g_z).^2);
+    time_of_flight_delay = (elm_to_grid_dist - ref_to_grid_dist) / c;
+end
+    
+
+
+
+
+
