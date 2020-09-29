@@ -69,7 +69,7 @@ roi_t = angular_coord;
 %% Beamforming
 beamformed_image = zeros(length(roi_r), length(roi_t));
 figure(2)
-%imagesc(1:192, depth_axis, rf_data_cell{1})
+imagesc(1:192, depth_axis, rf_data_cell{1})
 % xlabel('Elements')
 % ylabel('Depth [m]')
 % title('Time-of-flight delays for each element at (r=0.0420 [m], theta=-29 [degrees]) for the 65th emission.')
@@ -89,7 +89,6 @@ for i=1%:5%:length(rf_data_cell)
     
     figure()
     plot(g_x, g_z, 'o')
-    hold 
     % Calculate time of flight delay array.
     time_of_flight_delay = ToF(g_x, g_z, e_x, e_z, c);
     pxl_to_take = round(time_of_flight_delay * sample_fs);
